@@ -17,35 +17,41 @@ routerAdd("GET", "/api/invv/user", (e) => {
 //   INVV_PRINTER_PORT  - printer port (default 9100)
 //   INVV_SOCKS_PROXY   - SOCKS5 proxy "host:port" (optional)
 routerAdd("POST", "/api/invv/print", (e) => {
-  const data = new DynamicModel({ zpl: "" });
-  e.bindBody(data);
-  if (!data.zpl) throw new BadRequestError("zpl is required");
+  try {
+    const data = new DynamicModel({ zpl: "" });
+    e.bindBody(data);
+    if (!data.zpl) throw new BadRequestError("zpl is required");
 
-  const printerHost = $os.getenv("INVV_PRINTER_HOST") || "";
-  const printerPort = $os.getenv("INVV_PRINTER_PORT") || "9100";
-  const socksProxy = $os.getenv("INVV_SOCKS_PROXY") || "";
+    const printerHost = $os.getenv("INVV_PRINTER_HOST") || "";
+    const printerPort = $os.getenv("INVV_PRINTER_PORT") || "9100";
+    const socksProxy = $os.getenv("INVV_SOCKS_PROXY") || "";
 
-  if (!printerHost) throw new BadRequestError("Printer not configured (INVV_PRINTER_HOST)");
+    if (!printerHost) throw new BadRequestError("Printer not configured (INVV_PRINTER_HOST)");
 
-  let cmd;
-  if (socksProxy) {
-    const parts = socksProxy.split(":");
-    const proxyHost = parts[0];
-    const proxyPort = parts[1] || "1080";
-    cmd = $os.exec("socat", "STDIN", "SOCKS5:" + proxyHost + ":" + printerHost + ":" + printerPort + ",socksport=" + proxyPort);
-  } else {
-    cmd = $os.exec("nc", "-N", printerHost, printerPort);
+    let cmd;
+    if (socksProxy) {
+      const parts = socksProxy.split(":");
+      const proxyHost = parts[0];
+      const proxyPort = parts[1] || "1080";
+      cmd = $os.exec("socat", "STDIN", "SOCKS5:" + proxyHost + ":" + printerHost + ":" + printerPort + ",socksport=" + proxyPort);
+    } else {
+      cmd = $os.exec("nc", "-N", printerHost, printerPort);
+    }
+
+    cmd.stdin.write(data.zpl);
+    cmd.stdin.close();
+
+    const result = cmd.wait();
+    if (result.code !== 0) {
+      throw new InternalServerError("Print failed: " + (result.stderr || "exit code " + result.code));
+    }
+
+    return e.json(200, { success: true });
+  } catch (err) {
+    console.error("INVV print error:", err);
+    if (err instanceof ApiError) throw err;
+    throw new InternalServerError(err.message || String(err));
   }
-
-  cmd.stdin.write(data.zpl);
-  cmd.stdin.close();
-
-  const result = cmd.wait();
-  if (result.code !== 0) {
-    throw new InternalServerError("Print failed: " + (result.stderr || "exit code " + result.code));
-  }
-
-  return e.json(200, { success: true });
 }, $apis.requireAuth());
 
 // Always record the acting user (from the auth token) on item_history.
