@@ -1,28 +1,29 @@
 <template>
   <v-card>
     <v-card-text>
+      <div id="scan-camera" class="camera-box"></div>
+
+      <v-alert
+        v-if="error"
+        type="error"
+        class="mt-2"
+        variant="tonal"
+        closable
+        @click:close="error = ''"
+      >
+        {{ error }}
+      </v-alert>
+
       <v-btn
-        v-if="!scanning"
+        v-if="error"
         block
         color="primary"
-        size="x-large"
-        variant="outlined"
-        @click="startCamera"
-      >
-        <v-icon start>mdi-qrcode-scan</v-icon>
-        Scan QR Code
-      </v-btn>
-
-      <div v-if="scanning" id="scan-camera" class="camera-box"></div>
-
-      <v-btn
-        v-if="scanning"
-        block
-        color="error"
         class="mt-2"
-        @click="stopCamera"
+        variant="outlined"
+        @click="initScanner"
       >
-        Cancel
+        <v-icon start>mdi-refresh</v-icon>
+        Try Again
       </v-btn>
 
       <v-divider class="my-4">or</v-divider>
@@ -43,38 +44,53 @@
 </template>
 
 <script setup>
-import { ref, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+
+const SCANNER_ID = 'scan-camera'
 
 const emit = defineEmits(['scan'])
-const scanning = ref(false)
 const manualCode = ref('')
-let html5QrCode = null
+const error = ref('')
+let scanner = null
 
-async function startCamera() {
-  const { Html5Qrcode } = await import('html5-qrcode')
-  scanning.value = true
-  html5QrCode = new Html5Qrcode('scan-camera')
+async function initScanner() {
+  error.value = ''
+
+  const { Html5QrcodeScanner, Html5Qrcode } = await import('html5-qrcode')
+
   try {
-    await html5QrCode.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 300, height: 300 } },
-      (text) => {
-        emit('scan', text)
-        stopCamera()
-      },
-      () => {},
-    )
+    const cameras = await Html5Qrcode.getCameras()
+    if (!cameras || cameras.length === 0) {
+      error.value = 'No camera found on this device.'
+      return
+    }
   } catch (e) {
-    scanning.value = false
+    if (e.name === 'NotAllowedError' || e.message?.includes('Permission')) {
+      error.value = 'Camera access denied. Grant camera permission in your browser or phone settings, then try again.'
+    } else {
+      error.value = 'Could not access camera. Check that your device has a working camera.'
+    }
+    return
   }
-}
 
-function stopCamera() {
-  if (html5QrCode) {
-    html5QrCode.stop().catch(() => {})
-    html5QrCode = null
-  }
-  scanning.value = false
+  scanner = new Html5QrcodeScanner(
+    SCANNER_ID,
+    {
+      fps: 10,
+      qrbox: { width: 300, height: 300 },
+      aspectRatio: 1,
+      showTorchButtonIfSupported: true,
+      useBarCodeDetectorIfSupported: true,
+    },
+    false
+  )
+
+  scanner.render(
+    (text) => {
+      emit('scan', text)
+    },
+    () => {}
+  )
 }
 
 function submitManual() {
@@ -85,7 +101,16 @@ function submitManual() {
   }
 }
 
-onUnmounted(() => stopCamera())
+onMounted(() => {
+  initScanner()
+})
+
+onUnmounted(() => {
+  if (scanner) {
+    try { scanner.clear() } catch (_) {}
+    scanner = null
+  }
+})
 </script>
 
 <style scoped>
@@ -93,8 +118,7 @@ onUnmounted(() => stopCamera())
   width: 100%;
   max-width: 400px;
   margin: 0 auto;
-  aspect-ratio: 1;
-  background: #000;
+  min-height: 300px;
   border-radius: 8px;
   overflow: hidden;
 }
