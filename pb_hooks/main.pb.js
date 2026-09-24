@@ -33,18 +33,16 @@ routerAdd("POST", "/api/invv/print", (e) => {
       const parts = socksProxy.split(":");
       const proxyHost = parts[0];
       const proxyPort = parts[1] || "1080";
-      cmd = $os.exec("socat", "STDIN", "SOCKS5:" + proxyHost + ":" + printerHost + ":" + printerPort + ",socksport=" + proxyPort);
+      cmd = $os.cmd("socat", "STDIN", "SOCKS5:" + proxyHost + ":" + printerHost + ":" + printerPort + ",socksport=" + proxyPort);
     } else {
-      cmd = $os.exec("nc", "-N", printerHost, printerPort);
+      cmd = $os.cmd("nc", "-N", printerHost, printerPort);
     }
 
-    cmd.stdin.write(data.zpl);
-    cmd.stdin.close();
-
-    const result = cmd.wait();
-    if (result.code !== 0) {
-      throw new InternalServerError("Print failed: " + (result.stderr || "exit code " + result.code));
-    }
+    const pipe = cmd.stdinPipe();
+    cmd.start();
+    pipe.write(toBytes(data.zpl));
+    pipe.close();
+    cmd.wait();
 
     return e.json(200, { success: true });
   } catch (err) {
