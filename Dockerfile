@@ -8,7 +8,7 @@ RUN npm run build
 
 # Stage 2: Final image
 FROM alpine:3.21
-ARG PB_VERSION=0.26.2
+ARG PB_VERSION=0.40.4
 ARG TARGETOS=linux TARGETARCH=amd64
 
 RUN apk add --no-cache ca-certificates curl unzip netcat-openbsd socat

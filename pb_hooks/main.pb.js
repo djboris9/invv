@@ -40,7 +40,7 @@ routerAdd("POST", "/api/invv/print", (e) => {
 
     const pipe = cmd.stdinPipe();
     cmd.start();
-    pipe.write(toBytes(data.zpl));
+    pipe.write(data.zpl);
     pipe.close();
     cmd.wait();
 
