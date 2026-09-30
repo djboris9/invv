@@ -27,6 +27,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://127.0.0.1:8090',
+      '/_/': 'http://127.0.0.1:8090',
     },
   },
 })

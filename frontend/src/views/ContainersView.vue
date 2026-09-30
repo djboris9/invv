@@ -2,7 +2,7 @@
   <v-container>
     <v-row>
       <v-col cols="12" class="d-flex ga-2">
-        <v-btn prepend-icon="mdi-plus" color="primary" variant="tonal" @click="showCreate = true">
+        <v-btn prepend-icon="mdi-plus" color="primary" variant="tonal" @click="openCreate">
           New Container
         </v-btn>
         <v-btn prepend-icon="mdi-refresh" variant="text" @click="load" :loading="loading" />
@@ -58,12 +58,17 @@
               icon="mdi-label"
               @click="fetchLabel(c)"
             />
+            <v-btn
+              variant="text"
+              icon="mdi-pencil"
+              @click="openEdit(c)"
+            />
             <v-spacer />
             <v-btn
               variant="text"
               color="error"
               icon="mdi-delete"
-              @click="removeContainer(c.id)"
+              @click="openDelete(c)"
             />
           </v-card-actions>
         </v-card>
@@ -93,17 +98,32 @@
       </v-card>
     </v-dialog>
 
-    <v-dialog v-model="showCreate" max-width="400">
+    <v-dialog v-model="showForm" max-width="400">
+      <ContainerForm
+        :model="form"
+        :title="editing ? 'Edit Container' : 'New Container'"
+        :submit-label="editing ? 'Save' : 'Create'"
+        :loading="saving"
+        @submit="submitForm"
+        @cancel="showForm = false"
+      />
+    </v-dialog>
+
+    <v-dialog v-model="showDelete" max-width="400">
       <v-card>
-        <v-card-title>New Container</v-card-title>
+        <v-card-title>Delete container?</v-card-title>
         <v-card-text>
-          <v-text-field v-model="newName" label="Name" variant="outlined" />
-          <v-text-field v-model="newLocation" label="Location" variant="outlined" />
+          <p class="mb-2">Delete "{{ deleteTarget?.name }}"?</p>
+          <div v-if="deleteItemCount" class="text-caption text-medium-emphasis">
+            {{ deleteItemCount }} item(s) will be moved to unassigned.
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn variant="text" @click="showCreate = false">Cancel</v-btn>
-          <v-btn color="primary" variant="tonal" @click="createContainer">Create</v-btn>
+          <v-btn variant="text" @click="showDelete = false">Cancel</v-btn>
+          <v-btn color="error" variant="tonal" :loading="deleting" @click="removeContainer">
+            Delete
+          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -115,19 +135,24 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client'
 import { containerZpl } from '../lib/label'
+import ContainerForm from '../components/ContainerForm.vue'
 
 const router = useRouter()
 const containers = ref([])
 const items = ref([])
 const loading = ref(false)
-const showCreate = ref(false)
+const showForm = ref(false)
+const editing = ref(null)
+const saving = ref(false)
+const form = ref({ name: '', location: '' })
+const showDelete = ref(false)
+const deleteTarget = ref(null)
+const deleting = ref(false)
 const showLabelDialog = ref(false)
 const labelZpl = ref('')
 const labelContainer = ref(null)
 const printing = ref(false)
 const printError = ref('')
-const newName = ref('')
-const newLocation = ref('')
 
 const itemsByContainer = computed(() => {
   const map = {}
@@ -140,6 +165,11 @@ const itemsByContainer = computed(() => {
 })
 
 const unassigned = computed(() => itemsByContainer.value['__unassigned__'] || [])
+
+const deleteItemCount = computed(() => {
+  if (!deleteTarget.value) return 0
+  return itemsByContainer.value[deleteTarget.value.id]?.length || 0
+})
 
 async function load() {
   loading.value = true
@@ -157,21 +187,78 @@ async function load() {
   }
 }
 
-async function removeContainer(id) {
-  await api.delete('/api/collections/containers/records/' + id)
-  containers.value = containers.value.filter((c) => c.id !== id)
+function openCreate() {
+  editing.value = null
+  form.value = { name: '', location: '' }
+  showForm.value = true
 }
 
-async function createContainer() {
-  if (!newName.value.trim()) return
-  const r = await api.post('/api/collections/containers/records', {
-    name: newName.value,
-    location: newLocation.value,
+function openEdit(c) {
+  editing.value = c
+  form.value = { name: c.name, location: c.location || '' }
+  showForm.value = true
+}
+
+async function submitForm() {
+  if (!form.value.name.trim()) return
+  saving.value = true
+  try {
+    if (editing.value) {
+      const r = await api.patch('/api/collections/containers/records/' + editing.value.id, {
+        name: form.value.name,
+        location: form.value.location,
+      })
+      const idx = containers.value.findIndex((c) => c.id === editing.value.id)
+      if (idx !== -1) containers.value[idx] = r.data
+      await logContainerHistory(r.data, 'edit', describeChanges(editing.value, r.data))
+    } else {
+      const r = await api.post('/api/collections/containers/records', {
+        name: form.value.name,
+        location: form.value.location,
+      })
+      containers.value.push(r.data)
+      await logContainerHistory(r.data, 'create', 'created')
+    }
+    showForm.value = false
+  } finally {
+    saving.value = false
+  }
+}
+
+function describeChanges(oldC, newC) {
+  const parts = []
+  if (oldC.name !== newC.name) parts.push('name: "' + oldC.name + '" → "' + newC.name + '"')
+  const oldLoc = oldC.location || ''
+  const newLoc = newC.location || ''
+  if (oldLoc !== newLoc) parts.push('location: "' + oldLoc + '" → "' + newLoc + '"')
+  return parts.join('; ') || 'updated'
+}
+
+async function logContainerHistory(c, action, note) {
+  await api.post('/api/collections/container_history/records', {
+    container_id: c.id,
+    container_name: c.name,
+    action,
+    note,
   })
-  containers.value.push(r.data)
-  newName.value = ''
-  newLocation.value = ''
-  showCreate.value = false
+}
+
+function openDelete(c) {
+  deleteTarget.value = c
+  showDelete.value = true
+}
+
+async function removeContainer() {
+  if (!deleteTarget.value) return
+  deleting.value = true
+  try {
+    await api.delete('/api/collections/containers/records/' + deleteTarget.value.id)
+    containers.value = containers.value.filter((c) => c.id !== deleteTarget.value.id)
+    showDelete.value = false
+    await load()
+  } finally {
+    deleting.value = false
+  }
 }
 
 async function fetchLabel(c) {
@@ -179,10 +266,6 @@ async function fetchLabel(c) {
   labelZpl.value = containerZpl(c)
   printError.value = ''
   showLabelDialog.value = true
-}
-
-async function copyZpl() {
-  await navigator.clipboard.writeText(labelZpl.value)
 }
 
 async function printZpl() {
