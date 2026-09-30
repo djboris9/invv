@@ -35,7 +35,7 @@ routerAdd("POST", "/api/invv/print", (e) => {
       const proxyPort = parts[1] || "1080";
       cmd = $os.cmd("socat", "STDIN", "SOCKS5:" + proxyHost + ":" + printerHost + ":" + printerPort + ",socksport=" + proxyPort);
     } else {
-      cmd = $os.cmd("nc", "-N", printerHost, printerPort);
+      cmd = $os.cmd("socat", "STDIN", "TCP:" + printerHost + ":" + printerPort + ",connect-timeout=5");
     }
 
     const pipe = cmd.stdinPipe();

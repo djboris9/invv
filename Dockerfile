@@ -11,7 +11,7 @@ FROM alpine:3.21
 ARG PB_VERSION=0.40.4
 ARG TARGETOS=linux TARGETARCH=amd64
 
-RUN apk add --no-cache ca-certificates curl unzip netcat-openbsd socat
+RUN apk add --no-cache ca-certificates curl unzip socat
 RUN curl -fsSL "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_${TARGETOS}_${TARGETARCH}.zip" \
     -o /tmp/pb.zip && \
     unzip /tmp/pb.zip -d /pb && \

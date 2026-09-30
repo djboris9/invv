@@ -3,53 +3,117 @@
     <div class="text-h5 mb-3">Scan</div>
     <ScanQr @scan="onScan" />
 
-    <v-card v-if="scannedData" class="mt-4">
-      <v-card-title>Scanned: {{ scannedData.code }}</v-card-title>
-      <v-card-text>
-        <div v-if="scannedData.manufacturerPart">MPN: {{ scannedData.manufacturerPart }}</div>
-        <div v-if="scannedData.quantity">Qty: {{ scannedData.quantity }}</div>
-      </v-card-text>
-      <v-card-actions>
-        <v-btn
-          v-if="!mode"
-          color="primary"
-          variant="tonal"
-          prepend-icon="mdi-plus"
-          @click="mode = 'add'"
-        >
-          Add to container
-        </v-btn>
-        <v-btn
-          v-if="!mode"
-          color="warning"
-          variant="tonal"
-          prepend-icon="mdi-minus"
-          @click="mode = 'takeout'"
-        >
-          Take out
-        </v-btn>
-      </v-card-actions>
-    </v-card>
+    <v-alert
+      v-if="notice"
+      :type="noticeType"
+      class="mt-2"
+      variant="tonal"
+      closable
+      @click:close="notice = ''"
+    >
+      {{ notice }}
+    </v-alert>
 
-    <v-card v-if="mode" class="mt-4">
-      <v-card-title>{{ mode === 'add' ? 'Add Item' : 'Take Out' }}</v-card-title>
-      <v-card-text>
-        <v-select
-          v-model="selectedContainer"
-          :items="containers"
-          item-title="name"
-          item-value="id"
-          label="Container"
-          variant="outlined"
-          return-object
-        />
-        <v-text-field v-if="mode === 'takeout'" v-model.number="takeQty" label="Qty" type="number" variant="outlined" min="1" />
-      </v-card-text>
-      <v-card-actions>
-        <v-btn variant="text" @click="mode = null">Cancel</v-btn>
-        <v-btn color="primary" variant="tonal" @click="confirmAction">Confirm</v-btn>
-      </v-card-actions>
-    </v-card>
+    <v-select
+      v-if="scannedItems.length"
+      v-model="containerId"
+      :items="containers"
+      item-title="name"
+      item-value="id"
+      label="Container for new items"
+      variant="outlined"
+      class="mt-4"
+      clearable
+    />
+
+    <div v-if="scannedItems.length" class="mt-2">
+      <v-card
+        v-for="(entry, i) in scannedItems"
+        :key="entry.id"
+        class="mb-2"
+        :variant="entry.added ? 'tonal' : 'elevated'"
+        :color="entry.added ? 'success' : undefined"
+      >
+        <v-card-text>
+          <div class="d-flex align-center ga-2">
+            <div class="flex-grow-1">
+              <div v-if="entry.scannedData.manufacturerPart" class="font-weight-medium">
+                {{ entry.scannedData.manufacturerPart }}
+              </div>
+              <div class="text-caption text-medium-emphasis">
+                {{ entry.scannedData.code }}
+                <span v-if="entry.scannedData.quantity"> &middot; Qty: {{ entry.scannedData.quantity }}</span>
+              </div>
+            </div>
+
+            <template v-if="!entry.added">
+              <v-btn
+                v-if="!entry.showTakeout"
+                color="primary"
+                variant="tonal"
+                size="small"
+                prepend-icon="mdi-plus"
+                @click="addItem(i)"
+              >
+                Add
+              </v-btn>
+
+              <v-btn
+                v-if="!entry.showTakeout"
+                color="warning"
+                variant="tonal"
+                size="small"
+                prepend-icon="mdi-minus"
+                @click="entry.showTakeout = true"
+              >
+                Take out
+              </v-btn>
+
+              <v-btn
+                icon="mdi-close"
+                variant="text"
+                size="small"
+                @click="dismissItem(i)"
+              />
+            </template>
+            <template v-else>
+              <v-icon color="success">mdi-check-circle</v-icon>
+            </template>
+          </div>
+
+          <v-row v-if="entry.showTakeout && !entry.added" class="mt-2">
+            <v-col cols="4">
+              <v-text-field
+                v-model.number="entry.takeQty"
+                label="Qty"
+                type="number"
+                variant="outlined"
+                density="compact"
+                hide-details
+                min="1"
+              />
+            </v-col>
+            <v-col cols="8" class="d-flex ga-2 align-center">
+              <v-btn
+                color="warning"
+                variant="tonal"
+                size="small"
+                @click="takeOutItem(i)"
+              >
+                Confirm
+              </v-btn>
+              <v-btn
+                variant="text"
+                size="small"
+                @click="entry.showTakeout = false"
+              >
+                Cancel
+              </v-btn>
+            </v-col>
+          </v-row>
+        </v-card-text>
+      </v-card>
+    </div>
   </v-container>
 </template>
 
@@ -59,12 +123,15 @@ import { api } from '../api/client'
 import ScanQr from '../components/ScanQr.vue'
 import { useScanAction } from '../lib/useScanAction'
 
-const { scannedData, parseScan, createItem, takeoutItem } = useScanAction()
+let nextId = 1
 
-const mode = ref(null)
+const { parseScan, createItem, takeoutItem } = useScanAction()
+
+const scannedItems = ref([])
 const containers = ref([])
-const selectedContainer = ref(null)
-const takeQty = ref(1)
+const containerId = ref(null)
+const notice = ref('')
+const noticeType = ref('info')
 
 onMounted(async () => {
   const r = await api.get('/api/collections/containers/records?sort=name')
@@ -72,19 +139,53 @@ onMounted(async () => {
 })
 
 function onScan(raw) {
-  parseScan(raw)
-  mode.value = null
+  const data = parseScan(raw)
+  scannedItems.value.push({
+    id: nextId++,
+    scannedData: { ...data },
+    takeQty: 1,
+    showTakeout: false,
+    added: false,
+  })
 }
 
-async function confirmAction() {
-  if (!selectedContainer.value || !scannedData.value) return
-
-  if (mode.value === 'add') {
-    await createItem(selectedContainer.value.id)
-  } else if (mode.value === 'takeout') {
-    await takeoutItem(scannedData.value.code, takeQty.value)
+async function addItem(i) {
+  const entry = scannedItems.value[i]
+  if (!containerId.value) {
+    notice.value = 'Select a container first'
+    noticeType.value = 'warning'
+    return
   }
-  mode.value = null
-  scannedData.value = null
+  try {
+    await createItem(containerId.value)
+    entry.added = true
+    notice.value = 'Item added to container'
+    noticeType.value = 'success'
+    setTimeout(() => {
+      const idx = scannedItems.value.indexOf(entry)
+      if (idx !== -1) scannedItems.value.splice(idx, 1)
+    }, 1500)
+  } catch (e) {
+    notice.value = e.message || 'Failed to add item'
+    noticeType.value = 'error'
+  }
+}
+
+async function takeOutItem(i) {
+  const entry = scannedItems.value[i]
+  const qty = entry.takeQty || 1
+  try {
+    await takeoutItem(entry.scannedData.code, qty)
+    scannedItems.value.splice(i, 1)
+    notice.value = 'Taken out ' + qty
+    noticeType.value = 'success'
+  } catch (e) {
+    notice.value = e.message || 'Failed to take out item'
+    noticeType.value = 'error'
+  }
+}
+
+function dismissItem(i) {
+  scannedItems.value.splice(i, 1)
 }
 </script>
