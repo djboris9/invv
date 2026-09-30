@@ -27,6 +27,13 @@
         title="History"
         to="/history"
       />
+      <v-list-item
+        prepend-icon="mdi-shield-account"
+        title="Admin"
+        href="/_/"
+        target="_blank"
+        rel="noopener"
+      />
       <template v-slot:append>
         <v-list-item
           prepend-icon="mdi-logout"
