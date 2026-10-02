@@ -14,18 +14,18 @@ export function useScanAction() {
     return p
   }
 
-  async function createItem(containerId, formOverrides = {}) {
-    const d = scannedData.value
-    if (!d) throw new Error('No scanned data')
-    const dist = detectDistributor(rawCode.value)
+  async function createItem(containerId, entryData, rawCodeRaw, formOverrides = {}) {
+    if (!entryData) throw new Error('No scanned data')
+    const raw = rawCodeRaw || ''
+    const dist = detectDistributor(raw)
 
     const payload = {
-      name: d.manufacturerPart || d.code,
-      mfr_part_number: d.manufacturerPart || '',
-      order_number: d.orderNumber || '',
-      quantity_full: d.quantity || 1,
-      quantity_stock: d.quantity || 1,
-      code_raw: d.code,
+      name: entryData.manufacturerPart || entryData.code,
+      mfr_part_number: entryData.manufacturerPart || '',
+      order_number: entryData.orderNumber || '',
+      quantity_full: entryData.quantity || 1,
+      quantity_stock: entryData.quantity || 1,
+      code_raw: entryData.code,
       distributor: dist || 'lcsc',
       container: containerId,
       date_added: new Date().toISOString(),

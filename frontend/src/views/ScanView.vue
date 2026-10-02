@@ -142,6 +142,7 @@ function onScan(raw) {
   const data = parseScan(raw)
   scannedItems.value.push({
     id: nextId++,
+    rawCode: raw,
     scannedData: { ...data },
     takeQty: 1,
     showTakeout: false,
@@ -157,7 +158,7 @@ async function addItem(i) {
     return
   }
   try {
-    await createItem(containerId.value)
+    await createItem(containerId.value, entry.scannedData, entry.rawCode)
     entry.added = true
     notice.value = 'Item added to container'
     noticeType.value = 'success'
